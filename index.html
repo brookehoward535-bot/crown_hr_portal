@@ -1679,8 +1679,8 @@ const CONFIG = {
       <div class="notice-label">📧 Notify HR</div>
       <div class="notice-text" id="success-email-notice" style="margin-bottom:10px;"></div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="openMailApp()">
-          📬 Open Mail App
+        <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="showEmailModal()">
+          📬 Send HR Notification
         </button>
         <button class="btn btn-ghost" style="width:100%;justify-content:center;" onclick="copyEmailContent()">
           📋 Copy Email Content
@@ -2089,8 +2089,11 @@ function submitForm() {
   localStorage.setItem('crown_employees', JSON.stringify(employees));
   lastSubmitted = emp;
 
-  // Build and open notification email
-  sendNotificationEmail(emp);
+  // Store email content and show success screen
+  const emailData = buildEmailContent(emp);
+  window._lastEmailSubject = emailData.subject;
+  window._lastEmailBody = emailData.body;
+  window._lastEmailTo = CONFIG.notifyEmails.join(',');
 
   // Show success screen
   showSuccessScreen(emp);
@@ -2171,6 +2174,10 @@ function showSuccessScreen(emp) {
     document.getElementById('success-email-notice').textContent =
       `Send to: ${CONFIG.notifyEmails.join(' and ')}`;
     document.getElementById('email-addresses').textContent = CONFIG.notifyEmails.join(' · ');
+    // Pre-fill email modal
+    document.getElementById('email-to-field').textContent = CONFIG.notifyEmails.join(', ');
+    document.getElementById('email-subject-field').textContent = window._lastEmailSubject || '';
+    document.getElementById('email-body-field').value = window._lastEmailBody || '';
 
     // Insurance/401k action items
     document.getElementById('insurance-action-item').style.display = emp.beneIns ? 'flex' : 'none';
@@ -2519,35 +2526,43 @@ function newEmployee() {
   showForm();
 }
 
+function showEmailModal() {
+  document.getElementById('email-to-field').textContent = CONFIG.notifyEmails.join(', ');
+  document.getElementById('email-subject-field').textContent = window._lastEmailSubject || '';
+  document.getElementById('email-body-field').value = window._lastEmailBody || '';
+  document.getElementById('email-modal').style.display = 'flex';
+}
+
+function copyAndOpenMail() {
+  copyEmailOnly();
+  setTimeout(() => {
+    const to = window._lastEmailTo || CONFIG.notifyEmails.join(',');
+    const subject = window._lastEmailSubject || '';
+    const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}`;
+    window.location.href = mailtoLink;
+  }, 500);
+}
+
 function openMailApp() {
-  const subject = window._lastEmailSubject || '';
-  const body = window._lastEmailBody || '';
-  const to = window._lastEmailTo || CONFIG.notifyEmails.join(',');
-  const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = mailtoLink;
+  showEmailModal();
 }
 
-function copyEmailContent() {
+function copyEmailOnly() {
   const subject = window._lastEmailSubject || '';
   const body = window._lastEmailBody || '';
-  const full = `To: ${window._lastEmailTo || CONFIG.notifyEmails.join(', ')}
-Subject: ${subject}
-
-${body}`;
+  const full = `To: ${window._lastEmailTo || CONFIG.notifyEmails.join(', ')}\nSubject: ${subject}\n\n${body}`;
+  const showConfirm = () => {
+    const el = document.getElementById('email-copy-confirm');
+    if (el) { el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); }
+  };
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(full).then(() => {
-      document.getElementById('copy-confirm').style.display = 'block';
-      setTimeout(() => {
-        const el = document.getElementById('copy-confirm');
-        if (el) el.style.display = 'none';
-      }, 3000);
-    }).catch(() => fallbackCopy(full));
-  } else {
-    fallbackCopy(full);
-  }
+    navigator.clipboard.writeText(full).then(showConfirm).catch(() => fallbackCopyNew(full));
+  } else { fallbackCopyNew(full); }
 }
 
-function fallbackCopy(text) {
+function copyEmailContent() { copyEmailOnly(); }
+
+function fallbackCopyNew(text) {
   const ta = document.createElement('textarea');
   ta.value = text;
   ta.style.position = 'fixed';
@@ -2557,16 +2572,45 @@ function fallbackCopy(text) {
   ta.select();
   try {
     document.execCommand('copy');
-    document.getElementById('copy-confirm').style.display = 'block';
-    setTimeout(() => {
-      const el = document.getElementById('copy-confirm');
-      if (el) el.style.display = 'none';
-    }, 3000);
+    const el = document.getElementById('email-copy-confirm');
+    if (el) { el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 3000); }
   } catch(e) {
-    alert('Copy failed — please manually copy the email content.');
+    alert('Copy failed — select all text in the body field and copy manually.');
   }
   document.body.removeChild(ta);
 }
+
+function fallbackCopy(text) { fallbackCopyNew(text); }
 </script>
+
+<!-- EMAIL MODAL -->
+<div class="modal-overlay" id="email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:300;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border:1px solid var(--gold-border);border-radius:var(--radius-lg);width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;">
+    <div style="padding:14px 16px;background:var(--surface2);border-bottom:1px solid var(--surface3);display:flex;align-items:center;justify-content:space-between;border-radius:var(--radius-lg) var(--radius-lg) 0 0;">
+      <div style="font-family:'Chakra Petch',sans-serif;font-size:13px;font-weight:600;color:var(--gold);">📧 Send HR Notification</div>
+      <button onclick="document.getElementById('email-modal').style.display='none'" style="background:none;border:1px solid var(--surface4);color:var(--text-muted);font-size:16px;cursor:pointer;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:4px;">✕</button>
+    </div>
+    <div style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="margin-bottom:12px;">
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">To</div>
+        <div style="background:var(--surface2);border:1px solid var(--surface4);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--text);" id="email-to-field"></div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Subject</div>
+        <div style="background:var(--surface2);border:1px solid var(--surface4);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--text);" id="email-subject-field"></div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Body</div>
+        <textarea id="email-body-field" readonly style="width:100%;background:var(--surface2);border:1px solid var(--surface4);border-radius:var(--radius);padding:10px 12px;font-size:11px;color:var(--text);font-family:'Inter',monospace;line-height:1.6;min-height:200px;resize:none;outline:none;"></textarea>
+      </div>
+      <div id="email-copy-confirm" style="display:none;background:rgba(82,183,136,0.1);border:1px solid rgba(82,183,136,0.3);border-radius:var(--radius);padding:8px 12px;font-size:12px;color:var(--green);text-align:center;margin-bottom:10px;">✓ Copied to clipboard — open Mail and paste</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:14px;" onclick="copyAndOpenMail()">📬 Copy &amp; Open Mail</button>
+        <button class="btn btn-ghost" style="width:100%;justify-content:center;" onclick="copyEmailOnly()">📋 Copy Email Content Only</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
