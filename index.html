@@ -1676,8 +1676,18 @@ const CONFIG = {
     <div class="success-id" id="success-id"></div>
 
     <div class="success-notice">
-      <div class="notice-label">📧 HR Notified</div>
-      <div class="notice-text" id="success-email-notice"></div>
+      <div class="notice-label">📧 Notify HR</div>
+      <div class="notice-text" id="success-email-notice" style="margin-bottom:10px;"></div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="openMailApp()">
+          📬 Open Mail App
+        </button>
+        <button class="btn btn-ghost" style="width:100%;justify-content:center;" onclick="copyEmailContent()">
+          📋 Copy Email Content
+        </button>
+        <div id="copy-confirm" style="display:none;font-size:11px;color:var(--green);text-align:center;margin-top:2px;">✓ Copied — paste into a new email</div>
+        <div id="email-addresses" style="font-size:11px;color:var(--text-muted);text-align:center;"></div>
+      </div>
     </div>
 
     <div class="action-list">
@@ -2086,20 +2096,16 @@ function submitForm() {
   showSuccessScreen(emp);
 }
 
-function sendNotificationEmail(emp) {
+function buildEmailContent(emp) {
   const payInfo = emp.payType === 'Hourly'
     ? `Hourly — $${emp.hourlyRate}/hr (Billing: $${emp.billingRate}/hr)`
     : `Salary — $${Number(emp.salary).toLocaleString()}/yr`;
-
   const assets = [];
   if (emp.ipad) assets.push('iPad');
   if (emp.card) assets.push('Credit Card');
   if (emp.vehicle) assets.push('Vehicle');
-
   const subject = `New Hire Setup Complete — ${emp.firstName} ${emp.lastName} (${emp.id})`;
-
-  const body = `
-Dave has completed a new hire setup in the Crown HR portal. Please take action on the following steps.
+  const body = `Dave has completed a new hire setup in the Crown HR portal. Please take action on the following steps.
 
 EMPLOYEE: ${emp.firstName} ${emp.lastName}
 CELL PHONE: ${emp.phone || '—'}
@@ -2139,22 +2145,32 @@ ${emp.notes || 'None'}
 
 --- YOUR ACTION CHECKLIST ---
 1. Send handbook via DocuSign (wait for signed copy before proceeding)
-2. Set up employee in QBO Payroll and send self-onboarding invite
+2. Set up employee in QBO Payroll and send self-onboarding invite (email or text)
 3. Set up employee in Contractor Foreman
-${emp.beneIns ? '4. Call insurance — employee interested in bundle (life, medical, dental, vision)\n' : ''}${emp.bene401k ? '5. Set up 401(k) enrollment\n' : ''}
---- Crown Excavation HR Portal ---
-  `.trim();
+${emp.beneIns ? '4. Call insurance — employee interested in bundle (life, medical, dental, vision)' : ''}
+${emp.bene401k ? '5. Set up 401(k) enrollment' : ''}
+--- Crown Excavation HR Portal ---`.trim();
+  return { subject, body };
+}
 
+function sendNotificationEmail(emp) {
+  const { subject, body } = buildEmailContent(emp);
   const to = CONFIG.notifyEmails.join(',');
   const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = mailtoLink;
+  // Try mailto first, then fall back to showing copy button
+  const win = window.open(mailtoLink, '_blank');
+  // Store for copy fallback
+  window._lastEmailSubject = subject;
+  window._lastEmailBody = body;
+  window._lastEmailTo = to;
 }
 
 function showSuccessScreen(emp) {
   setTimeout(() => {
     document.getElementById('success-id').textContent = `${emp.firstName} ${emp.lastName} — ID: ${emp.id}`;
     document.getElementById('success-email-notice').textContent =
-      `Notification email opened to: ${CONFIG.notifyEmails.join(' and ')}`;
+      `Send to: ${CONFIG.notifyEmails.join(' and ')}`;
+    document.getElementById('email-addresses').textContent = CONFIG.notifyEmails.join(' · ');
 
     // Insurance/401k action items
     document.getElementById('insurance-action-item').style.display = emp.beneIns ? 'flex' : 'none';
@@ -2501,6 +2517,55 @@ function resetForm() {
 
 function newEmployee() {
   showForm();
+}
+
+function openMailApp() {
+  const subject = window._lastEmailSubject || '';
+  const body = window._lastEmailBody || '';
+  const to = window._lastEmailTo || CONFIG.notifyEmails.join(',');
+  const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = mailtoLink;
+}
+
+function copyEmailContent() {
+  const subject = window._lastEmailSubject || '';
+  const body = window._lastEmailBody || '';
+  const full = `To: ${window._lastEmailTo || CONFIG.notifyEmails.join(', ')}
+Subject: ${subject}
+
+${body}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(full).then(() => {
+      document.getElementById('copy-confirm').style.display = 'block';
+      setTimeout(() => {
+        const el = document.getElementById('copy-confirm');
+        if (el) el.style.display = 'none';
+      }, 3000);
+    }).catch(() => fallbackCopy(full));
+  } else {
+    fallbackCopy(full);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    document.getElementById('copy-confirm').style.display = 'block';
+    setTimeout(() => {
+      const el = document.getElementById('copy-confirm');
+      if (el) el.style.display = 'none';
+    }, 3000);
+  } catch(e) {
+    alert('Copy failed — please manually copy the email content.');
+  }
+  document.body.removeChild(ta);
 }
 </script>
 </body>
